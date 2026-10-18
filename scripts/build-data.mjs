@@ -8,8 +8,8 @@ import simplify from "simplify-js";
 import XLSX from "xlsx";
 
 // ── 仮の基準値（確認ページで見比べて調整する）──
-// 間引きの許容誤差 = 表示枠の対角線 / これ（DETAIL=4000 npm run build:data のように試せる）
-const DETAIL_DIVISOR = Number(process.env.DETAIL ?? 2400);
+// 間引きの許容誤差 = 表示枠の対角線 / これ（DETAIL=2400 npm run build:data のように試せる）
+const DETAIL_DIVISOR = Number(process.env.DETAIL ?? 7200);
 if (!(DETAIL_DIVISOR > 0)) { console.error(`NG: DETAIL が正の数でない: ${process.env.DETAIL}`); process.exit(1); }
 const MIN_ISLET_M2 = 10_000;    // これ未満の小島は除く（唯一の陸地なら残す）
 const VIEW_MAX_KM = 50;         // 表示枠に入れる島：最大の陸地から何km以内か
