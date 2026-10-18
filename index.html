@@ -37,6 +37,8 @@
   li.hit { border-color: var(--hit); }
   li.hit .mark { color: var(--hit); font-weight: bold; }
   li .mark { margin-left: auto; }
+  li .hint { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  li .arrow { display: inline-block; width: 1.2em; text-align: center; font-size: 1.1rem; }
   dialog { border: none; border-radius: 14px; padding: 24px; width: min(360px, calc(100vw - 32px)); background: var(--card); color: var(--ink); text-align: center; box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
   dialog::backdrop { background: rgb(0 0 0 / .45); }
   dialog h2 { margin: 0 0 6px; font-size: 1.5rem; }
@@ -161,6 +163,35 @@
   const solved = () => guesses.includes(answer.code);
   const isOver = () => solved() || guesses.length >= MAX_GUESSES;
 
+  // ── 距離と方角のヒント（回答した市区町村の代表点 → 正解の代表点）──
+  const R_KM = 6371.0088;
+  const DIRECTIONS = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"];
+  const rad = (d) => (d * Math.PI) / 180;
+  function distanceKm(a, b) {
+    const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R_KM * Math.asin(Math.sqrt(h));
+  }
+  function bearingDeg(a, b) { // 北が0度、時計回り
+    const dLon = rad(b.lon - a.lon);
+    const y = Math.sin(dLon) * Math.cos(rad(b.lat));
+    const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(dLon);
+    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  }
+  function hintOf(m) {
+    const km = distanceKm(m, answer), deg = bearingDeg(m, answer);
+    // 矢印は8方位のうち最も近い向きに丸める（方位名は読み上げ用にだけ持たせる）
+    const step = Math.round(deg / 45) % 8, dir = DIRECTIONS[step];
+    const hint = document.createElement("span");
+    hint.className = "mark hint";
+    hint.innerHTML = `<span></span><span class="arrow" role="img">↑</span>`;
+    hint.children[0].textContent = km < 1 ? "1km未満" : `${Math.round(km).toLocaleString("ja-JP")}km`;
+    hint.children[1].setAttribute("aria-label", dir);
+    hint.children[1].style.transform = `rotate(${step * 45}deg)`;
+    hint.title = `正解は${dir}に約${Math.round(km)}km`;
+    return hint;
+  }
+
   function render() {
     const rows = [];
     for (let i = 0; i < MAX_GUESSES; i++) {
@@ -169,8 +200,9 @@
       if (code) {
         const m = byCode.get(code), hit = code === answer.code;
         li.className = hit ? "hit" : "miss";
-        li.innerHTML = `<span class="no">${i + 1}</span><span></span><span class="mark">${hit ? "○ 正解" : "×"}</span>`;
+        li.innerHTML = `<span class="no">${i + 1}</span><span></span>`;
         li.children[1].textContent = `${m.pref} ${m.name}`;
+        li.append(hit ? Object.assign(document.createElement("span"), { className: "mark", textContent: "○ 正解" }) : hintOf(m));
       } else {
         li.innerHTML = `<span class="no">${i + 1}</span>`;
       }
