@@ -34,6 +34,7 @@
   li { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
   li .no { color: var(--muted); font-size: .8rem; width: 1.5em; }
   li.miss .mark { color: var(--miss); font-weight: bold; }
+  li.miss .mark.same-pref { color: var(--hit); } /* 正解と同じ都道府県 */
   li.hit { border-color: var(--hit); }
   li.hit .mark { color: var(--hit); font-weight: bold; }
   li .mark { margin-left: auto; }
@@ -183,7 +184,7 @@
     // 矢印は8方位のうち最も近い向きに丸める（方位名は読み上げ用にだけ持たせる）
     const step = Math.round(deg / 45) % 8, dir = DIRECTIONS[step];
     const hint = document.createElement("span");
-    hint.className = "mark hint";
+    hint.className = m.pref === answer.pref ? "mark hint same-pref" : "mark hint";
     hint.innerHTML = `<span></span><span class="arrow" role="img">↑</span>`;
     hint.children[0].textContent = km < 1 ? "1km未満" : `${Math.round(km).toLocaleString("ja-JP")}km`;
     hint.children[1].setAttribute("aria-label", dir);
