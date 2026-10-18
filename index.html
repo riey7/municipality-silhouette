@@ -180,13 +180,14 @@
   }
   function hintOf(m) {
     const km = distanceKm(m, answer), deg = bearingDeg(m, answer);
-    const dir = DIRECTIONS[Math.round(deg / 45) % 8];
+    // 矢印は8方位のうち最も近い向きに丸める（方位名は読み上げ用にだけ持たせる）
+    const step = Math.round(deg / 45) % 8, dir = DIRECTIONS[step];
     const hint = document.createElement("span");
     hint.className = "mark hint";
-    hint.innerHTML = `<span></span><span></span><span class="arrow" aria-hidden="true">↑</span>`;
+    hint.innerHTML = `<span></span><span class="arrow" role="img">↑</span>`;
     hint.children[0].textContent = km < 1 ? "1km未満" : `${Math.round(km).toLocaleString("ja-JP")}km`;
-    hint.children[1].textContent = dir;
-    hint.children[2].style.transform = `rotate(${deg.toFixed(0)}deg)`;
+    hint.children[1].setAttribute("aria-label", dir);
+    hint.children[1].style.transform = `rotate(${step * 45}deg)`;
     hint.title = `正解は${dir}に約${Math.round(km)}km`;
     return hint;
   }
