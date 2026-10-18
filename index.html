@@ -145,8 +145,29 @@
   const stripNameSuffix = (s) => s.replace(/(市|町|村|区)$/, "");
   const stripKanaSuffix = (s) => s.replace(/(し|ちょう|まち|むら|そん|く)$/, "");
 
+  // 都道府県名の読み（データに読みがないので持たせる）
+  const PREF_KANA = {
+    北海道: "ほっかいどう", 青森県: "あおもりけん", 岩手県: "いわてけん", 宮城県: "みやぎけん", 秋田県: "あきたけん",
+    山形県: "やまがたけん", 福島県: "ふくしまけん", 茨城県: "いばらきけん", 栃木県: "とちぎけん", 群馬県: "ぐんまけん",
+    埼玉県: "さいたまけん", 千葉県: "ちばけん", 東京都: "とうきょうと", 神奈川県: "かながわけん", 新潟県: "にいがたけん",
+    富山県: "とやまけん", 石川県: "いしかわけん", 福井県: "ふくいけん", 山梨県: "やまなしけん", 長野県: "ながのけん",
+    岐阜県: "ぎふけん", 静岡県: "しずおかけん", 愛知県: "あいちけん", 三重県: "みえけん", 滋賀県: "しがけん",
+    京都府: "きょうとふ", 大阪府: "おおさかふ", 兵庫県: "ひょうごけん", 奈良県: "ならけん", 和歌山県: "わかやまけん",
+    鳥取県: "とっとりけん", 島根県: "しまねけん", 岡山県: "おかやまけん", 広島県: "ひろしまけん", 山口県: "やまぐちけん",
+    徳島県: "とくしまけん", 香川県: "かがわけん", 愛媛県: "えひめけん", 高知県: "こうちけん", 福岡県: "ふくおかけん",
+    佐賀県: "さがけん", 長崎県: "ながさきけん", 熊本県: "くまもとけん", 大分県: "おおいたけん", 宮崎県: "みやざきけん",
+    鹿児島県: "かごしまけん", 沖縄県: "おきなわけん",
+  };
+
   const index = await fetch("data/index.json").then((r) => r.json());
-  const prefs = [...new Set(index.map((m) => m.pref))].sort((a, b) => b.length - a.length);
+  const prefs = [...new Set(index.map((m) => m.pref))];
+  // 都道府県名（漢字か読み、「県」「けん」まで含む）が先頭に付いていたら、その都道府県と残りに分ける
+  const prefForms = prefs.flatMap((p) => [normalize(p), PREF_KANA[p]].filter(Boolean).map((form) => ({ pref: normalize(p), form })))
+    .sort((a, b) => b.form.length - a.form.length);
+  function splitPref(key) {
+    const hit = prefForms.find((x) => key.startsWith(x.form) && key.length > x.form.length);
+    return hit ? { pref: hit.pref, rest: key.slice(hit.form.length) } : null;
+  }
   const lookup = new Map(); // 正規化した表記 → 市区町村の配列
   const add = (key, m) => {
     if (!key) return;
@@ -165,9 +186,9 @@
     const key = normalize(input);
     if (!key) return [];
     if (lookup.has(key)) return lookup.get(key);
-    // 「神奈川県横浜市」のように都道府県名が付いていたら外して探す
-    const pref = prefs.find((p) => key.startsWith(normalize(p)));
-    return pref ? (lookup.get(key.slice(normalize(pref).length)) ?? []) : [];
+    // 「神奈川県横浜市」「かながわけんよこはま」のように都道府県名が付いていたら外して探す
+    const split = splitPref(key);
+    return split ? (lookup.get(split.rest) ?? []).filter((m) => normalize(m.pref) === split.pref) : [];
   }
 
   // ── 出題 ──
@@ -319,29 +340,30 @@
     if (storageKey) store.save(storageKey, guesses);
     $("guess").value = "";
     $("message").textContent = matches.length > 1 && pick.code !== answer.code
-      ? `同じ名前が${matches.length}件あります（${matches.map((m) => m.pref).join("・")}）。どれも不正解です`
+      ? `同じ名前が${matches.length}件あります（${matches.map((m) => m.pref + m.name).join("・")}）。どれも不正解です`
       : "";
     render();
     if (isOver()) { recordResult(); showResult(); }
   }
 
   // ── 入力候補 ──
-  // 名前・読みの前方一致を優先し、名前の部分一致も出す。回答済みのものは出さない
-  const searchKeys = index.map((m) => ({ m, name: normalize(m.name), kana: normalize(m.kana), pref: normalize(m.pref) }));
+  // 名前・読みの前方一致を優先し、次に都道府県名（漢字・読み）の前方一致、最後に名前の部分一致。回答済みのものは出さない
+  const searchKeys = index.map((m) => ({ m, name: normalize(m.name), kana: normalize(m.kana), pref: normalize(m.pref), prefKana: PREF_KANA[m.pref] ?? "" }));
   let suggestions = [], active = -1;
 
   function suggest(input) {
     let q = normalize(input), pref = null;
     if (!q) return [];
-    const p = prefs.find((x) => q.startsWith(normalize(x)) && q.length > normalize(x).length);
-    if (p) { pref = normalize(p); q = q.slice(pref.length); }
+    const split = splitPref(q);
+    if (split) { pref = split.pref; q = split.rest; }
     const scored = [];
     for (const k of searchKeys) {
       if (guesses.includes(k.m.code) || (pref && k.pref !== pref)) continue;
       const score = k.name === q || k.kana === q ? 0
         : k.name.startsWith(q) ? 1
         : k.kana.startsWith(q) ? 2
-        : k.name.includes(q) ? 3
+        : !pref && (k.pref.startsWith(q) || k.prefKana.startsWith(q)) ? 3
+        : k.name.includes(q) ? 4
         : -1;
       if (score >= 0) scored.push({ m: k.m, score });
     }
