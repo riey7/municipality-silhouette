@@ -5,6 +5,10 @@
 
 本家をたくさん遊びたい。練習したい。というモチベーションでの作成です。許可は取っていません。
 
+## Github Pages
+
+https://riey7.github.io/municipality-silhouette/
+
 ## 遊び方
 
 ```
