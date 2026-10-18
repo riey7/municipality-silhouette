@@ -24,7 +24,7 @@
   button:disabled, input:disabled { opacity: .5; cursor: default; }
   input:focus-visible, button:focus-visible { outline: 2px solid var(--shape); outline-offset: 2px; }
   #suggestions { position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; display: block; gap: 0;
-    background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15); max-height: 320px; overflow-y: auto; }
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15); max-height: min(320px, 45vh); overflow-y: auto; overscroll-behavior: contain; }
   #suggestions[hidden] { display: none; }
   #suggestions li { min-height: 0; padding: 8px 10px; border: none; border-radius: 6px; background: transparent; cursor: pointer; justify-content: space-between; }
   #suggestions li[aria-selected="true"], #suggestions li:hover { background: color-mix(in srgb, var(--shape) 14%, transparent); }
@@ -34,6 +34,7 @@
   li { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
   li .no { color: var(--muted); font-size: .8rem; width: 1.5em; }
   li.miss .mark { color: var(--miss); font-weight: bold; }
+  li.miss .mark.same-pref { color: var(--hit); } /* 正解と同じ都道府県 */
   li.hit { border-color: var(--hit); }
   li.hit .mark { color: var(--hit); font-weight: bold; }
   li .mark { margin-left: auto; }
@@ -183,7 +184,7 @@
     // 矢印は8方位のうち最も近い向きに丸める（方位名は読み上げ用にだけ持たせる）
     const step = Math.round(deg / 45) % 8, dir = DIRECTIONS[step];
     const hint = document.createElement("span");
-    hint.className = "mark hint";
+    hint.className = m.pref === answer.pref ? "mark hint same-pref" : "mark hint";
     hint.innerHTML = `<span></span><span class="arrow" role="img">↑</span>`;
     hint.children[0].textContent = km < 1 ? "1km未満" : `${Math.round(km).toLocaleString("ja-JP")}km`;
     hint.children[1].setAttribute("aria-label", dir);
@@ -245,7 +246,6 @@
 
   // ── 入力候補 ──
   // 名前・読みの前方一致を優先し、名前の部分一致も出す。回答済みのものは出さない
-  const MAX_SUGGESTIONS = 8;
   const searchKeys = index.map((m) => ({ m, name: normalize(m.name), kana: normalize(m.kana), pref: normalize(m.pref) }));
   let suggestions = [], active = -1;
 
@@ -265,7 +265,7 @@
       if (score >= 0) scored.push({ m: k.m, score });
     }
     scored.sort((a, b) => a.score - b.score || a.m.code.localeCompare(b.m.code));
-    return scored.slice(0, MAX_SUGGESTIONS).map((x) => x.m);
+    return scored.map((x) => x.m); // 件数は絞らず、候補の窓の中でスクロールして見る
   }
 
   function renderSuggestions() {
