@@ -57,7 +57,8 @@
   /* アイコンだけのボタン。icons/*.svg を型抜きに使い、色は文字色に合わせる（ダークモードでも変わる） */
   button.icon { display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: none; background: transparent; color: var(--ink); align-self: center; }
   button.icon:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
-  button.icon .glyph { width: 24px; height: 24px; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+  button.square { display: inline-grid; place-items: center; padding: 10px 12px; }
+  .glyph { display: block; width: 24px; height: 24px; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
   #stats { text-align: left; }
   #stats h2 { text-align: center; }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 18px; }
@@ -114,7 +115,7 @@
   <p class="map"><a id="result-map" target="_blank" rel="noopener">Google マップで見る ↗</a></p>
   <div class="actions">
     <button id="next" type="button" autofocus>もう一問</button>
-    <button id="result-stats" type="button" class="secondary">統計</button>
+    <button id="result-stats" type="button" class="secondary square" aria-label="統計" title="統計"><span class="glyph" style="--icon: url(icons/stats.svg)" aria-hidden="true"></span></button>
     <button id="close" type="button" class="secondary">閉じる</button>
   </div>
 </dialog>
