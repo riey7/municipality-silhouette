@@ -5,73 +5,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>形の確認</title>
 <style>
-  :root {
-    --paper: #f7f8f6; --ink: #1d2a24; --muted: #5d6b64; --shape: #2f5d4a; --line: #d5dbd7;
-    color-scheme: light;
-  }
+  :root { --paper: #f7f8f6; --ink: #1d2a24; --muted: #5d6b64; --shape: #2f5d4a; --line: #d5dbd7; --hit: #c2562f; color-scheme: light; }
   @media (prefers-color-scheme: dark) {
-    :root { --paper: #141a17; --ink: #e6ece8; --muted: #9aa8a1; --shape: #7fb89d; --line: #2c3631; color-scheme: dark; }
+    :root { --paper: #141a17; --ink: #e6ece8; --muted: #9aa8a1; --shape: #7fb89d; --line: #2c3631; --hit: #e98a62; color-scheme: dark; }
   }
-  body { margin: 0; padding: 24px; background: var(--paper); color: var(--ink);
-         font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
-  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: baseline; margin-bottom: 20px; }
+  body { margin: 0; padding: 24px; background: var(--paper); color: var(--ink); font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: baseline; }
   h1 { font-size: 1.25rem; margin: 0; }
-  #status { color: var(--muted); font-size: .9rem; }
-  button { font: inherit; padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px;
-           background: transparent; color: var(--ink); cursor: pointer; }
+  h2 { font-size: 1rem; margin: 28px 0 10px; }
+  .note { color: var(--muted); font-size: .85rem; }
+  button { font: inherit; padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--shape); outline-offset: 2px; }
-  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
   figure { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-  svg { width: 100%; aspect-ratio: 1; display: block; }
-  path { fill: var(--shape); }
+  svg { display: block; width: 100%; }
+  .shape { aspect-ratio: 1; }
+  .shape path { fill: var(--shape); }
   figcaption { font-size: .85rem; margin-top: 6px; }
   figcaption small { color: var(--muted); display: block; }
-  footer { margin-top: 28px; font-size: .8rem; color: var(--muted); }
+  #japan { max-width: 720px; }
+  #japan .muni { fill: none; stroke: var(--line); stroke-width: .3; }
+  #japan .pref { fill: none; stroke: var(--muted); stroke-width: .7; }
+  #japan .hit { fill: var(--hit); }
+  footer { margin-top: 32px; font-size: .8rem; color: var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <h1>形の確認</h1>
-  <span id="status">読み込み中…</span>
-  <button id="reroll" type="button" disabled>別の20件を表示</button>
+  <span id="status" class="note">読み込み中…</span>
 </header>
-<main id="grid"></main>
-<footer>出典：国土数値情報（行政区域データ）（国土交通省）を加工して作成（加工元：smartnews-smri/japan-topography）</footer>
+
+<h2>ランダム</h2>
+<button id="reroll" type="button" disabled>別の20件を表示</button>
+<div id="random" class="grid" style="margin-top:12px"></div>
+
+<div id="worst"></div>
+
+<h2>全国地図</h2>
+<p class="note">ランダムの先頭の市区町村を色付けしています。</p>
+<svg id="japan" viewBox="0 0 720 720" role="img" aria-label="全国地図"></svg>
+
+<footer>
+  出典：国土数値情報（行政区域データ）（国土交通省）を加工して作成／読み：総務省「全国地方公共団体コード」を加工して作成
+</footer>
 
 <script type="module">
   import { geoMercator, geoPath } from "https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/+esm";
-  import { feature } from "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/+esm";
+  import { feature, mesh } from "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/+esm";
 
-  const SIZE = 200, PAD = 12;
-  const status = document.getElementById("status");
-  const grid = document.getElementById("grid");
-  const reroll = document.getElementById("reroll");
-
-  const [topo, index] = await Promise.all([
-    fetch("data/municipalities.topojson").then((r) => r.json()),
+  const SIZE = 200, PAD = 10;
+  const $ = (id) => document.getElementById(id);
+  const [index, japan] = await Promise.all([
     fetch("data/index.json").then((r) => r.json()),
+    fetch("data/japan.topojson").then((r) => r.json()),
   ]);
-  const shapes = new Map(
-    feature(topo, topo.objects.municipalities).features.map((f) => [f.id, f])
-  );
-  status.textContent = `${index.length}件を読み込みました`;
+  const byCode = new Map(index.map((m) => [m.code, m]));
+  // 加工時の集計（ローカルで build した後だけ存在する）
+  const report = await fetch("raw/build/report.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  $("status").textContent = `${index.length}件`;
 
-  function draw() {
-    const picks = [...index].sort(() => Math.random() - 0.5).slice(0, 20);
-    grid.replaceChildren(...picks.map((m) => {
-      const f = shapes.get(m.code);
-      const projection = geoMercator().fitExtent([[PAD, PAD], [SIZE - PAD, SIZE - PAD]], f);
-      const fig = document.createElement("figure");
-      fig.innerHTML =
-        `<svg viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="${m.pref}${m.name}の形">` +
-        `<path d="${geoPath(projection)(f)}"/></svg>` +
-        `<figcaption>${m.pref} ${m.name}<small>${m.code}</small></figcaption>`;
-      return fig;
-    }));
+  const loadShape = (code) => fetch(`data/shapes/${code}.json`).then((r) => r.json());
+
+  async function card(code) {
+    const m = byCode.get(code);
+    const [w, s, e, n] = m.view;
+    const frame = { type: "MultiPoint", coordinates: [[w, s], [e, n], [w, n], [e, s]] };
+    const projection = geoMercator().fitExtent([[PAD, PAD], [SIZE - PAD, SIZE - PAD]], frame);
+    const fig = document.createElement("figure");
+    fig.innerHTML =
+      `<svg class="shape" viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="${m.pref}${m.name}の形">` +
+      `<path d="${geoPath(projection)(await loadShape(code))}"/></svg>` +
+      `<figcaption>${m.pref} ${m.name}<small>${m.kana} ・ ${m.code}</small></figcaption>`;
+    return fig;
   }
-  reroll.addEventListener("click", draw);
-  reroll.disabled = false;
-  draw();
+  const fill = async (el, codes) => el.replaceChildren(...(await Promise.all(codes.map(card))));
+
+  // 全国地図
+  const munis = feature(japan, japan.objects.municipalities);
+  const projection = geoMercator().fitExtent([[10, 10], [710, 710]], feature(japan, japan.objects.prefectures));
+  const path = geoPath(projection);
+  function drawJapan(highlight) {
+    const hit = munis.features.find((f) => f.id === highlight);
+    $("japan").innerHTML =
+      `<path class="muni" d="${path(mesh(japan, japan.objects.municipalities))}"/>` +
+      `<path class="pref" d="${path(mesh(japan, japan.objects.prefectures))}"/>` +
+      (hit ? `<path class="hit" d="${path(hit)}"/>` : "");
+  }
+
+  async function reroll() {
+    const picks = [...index].sort(() => Math.random() - 0.5).slice(0, 20).map((m) => m.code);
+    await fill($("random"), picks);
+    drawJapan(picks[0]);
+  }
+  $("reroll").addEventListener("click", reroll);
+  $("reroll").disabled = false;
+  await reroll();
+
+  if (report) {
+    const sorted = (key, dir) => [...report].sort((a, b) => (a[key] - b[key]) * dir);
+    const groups = [
+      ["面積が小さい10件", sorted("areaKm2", 1)],
+      ["島が多い10件", sorted("parts", -1)],
+      ["表示枠の外に島がある10件（島の数が多い順）", sorted("outOfView", -1).filter((r) => r.outOfView)],
+    ];
+    for (const [title, rows] of groups) {
+      const h = document.createElement("h2"); h.textContent = title;
+      const grid = document.createElement("div"); grid.className = "grid";
+      $("worst").append(h, grid);
+      await fill(grid, rows.slice(0, 10).map((r) => r.code));
+    }
+  }
 </script>
 </body>
 </html>

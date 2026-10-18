@@ -1,64 +1,159 @@
-// 段階3：raw/ の元データから、ゲーム用の data/ を作る
-//   data/municipalities.topojson … 形（市区町村コードを id に持つ）
-//   data/index.json              … コード・名前・都道府県・重心
-// 元データは政令市の区が結合済みなので、ここでは区の統合はしない。
-import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, statSync } from "node:fs";
-import * as topojson from "topojson-client";
-import { geoCentroid } from "d3-geo";
+// 加工2：中間ファイルから、出題用の形（1件1ファイル）と一覧を作る
+//   data/shapes/<code>.json … 出題用の形（市区町村ごとに大きさに比例して間引く）
+//   data/index.json         … コード・名前・都道府県・読み・代表点・表示枠
+//   raw/build/codes.csv     … 全国地図（build-japan.sh）用のキー→コード対応
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync } from "node:fs";
+import { geoArea, geoBounds, geoCentroid, geoDistance } from "d3-geo";
+import simplify from "simplify-js";
+import XLSX from "xlsx";
 
-const SRC = "raw/N03-21_210101_designated_city.json";
-const OUT_TOPO = "data/municipalities.topojson";
-const OUT_INDEX = "data/index.json";
-const EXPECTED_COUNT = 1747; // 1,718市町村 + 東京23区 + 北方領土6村（2021年1月1日時点）
-const NORTHERN_VILLAGES = ["01695", "01696", "01697", "01698", "01699", "01700"];
+// ── 仮の基準値（確認ページで見比べて調整する）──
+const DETAIL_DIVISOR = 800;     // 間引きの許容誤差 = 表示枠の対角線 / これ
+const MIN_ISLET_M2 = 10_000;    // これ未満の小島は除く（唯一の陸地なら残す）
+const VIEW_MAX_KM = 50;         // 表示枠に入れる島：最大の陸地から何km以内か
+const VIEW_MIN_RATIO = 0.01;    // 表示枠に入れる島：最大の陸地の何割以上の面積か
+// ── 検証の基準 ──
+const EXPECTED_COUNT = 1747;
+// N03と総務省一覧で字体だけが違う名前（表示にはN03の名前を使う）
+const NAME_VARIANTS = new Map([
+  ["39405", "梼原町"], // N03は「檮原町」
+]);
+const MIN_VERTICES = 12;
+const MAX_FILE_KB = 150;
 
+const R_KM = 6371.0088;
 const fail = (msg) => { console.error(`NG: ${msg}`); process.exit(1); };
+const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
-// 1. 形：所属未定地（コードなし）を除き、属性をコードだけにして書き出す
-execFileSync("npx", [
-  "mapshaper", SRC,
-  "-filter", "N03_007 != null",
-  "-each", "code = N03_007",
-  "-filter-fields", "code",
-  "-rename-layers", "municipalities",
-  "-o", OUT_TOPO, "format=topojson", "id-field=code", "quantization=100000",
-], { stdio: "inherit" });
+// 1. 総務省コード一覧（6桁の末尾は検査数字なので5桁にそろえる）
+const book = XLSX.readFile("raw/soumu-codes.xlsx");
+const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1 }).slice(1);
+const soumu = new Map();       // code5 → { pref, name, kana }
+const byName = new Map();      // "都道府県|市区町村" → code5
+for (const [code6, pref, name, , kanaHalf] of rows) {
+  if (!code6 || !name) continue; // 都道府県の行は除く
+  const code = String(code6).padStart(6, "0").slice(0, 5);
+  const kana = String(kanaHalf ?? "").normalize("NFKC");
+  soumu.set(code, { pref, name, kana });
+  byName.set(`${pref}|${name}`, code);
+}
 
-// 2. 一覧：名前・都道府県・重心
-const raw = JSON.parse(readFileSync(SRC, "utf8"));
-const rawObj = Object.values(raw.objects)[0];
-const features = topojson.feature(raw, rawObj).features
-  .filter((f) => f.properties.N03_007);
+// 2. 読みの手修正（data/kana-overrides.csv：code,kana,note）
+const overrides = new Map();
+for (const line of readFileSync("data/kana-overrides.csv", "utf8").split(/\r?\n/).slice(1)) {
+  if (!line.trim()) continue;
+  const [code, kana] = line.split(",");
+  if (!/^\d{5}$/.test(code) || !kana) fail(`kana-overrides.csv の行が不正: ${line}`);
+  overrides.set(code, kana.trim());
+}
 
-const index = features.map((f) => {
+// 3. 形の処理に使う関数
+// 中間ファイル（GeoJSON）は外周が反時計回り。d3 は時計回りを内側とみなすので、
+// 「地球全体からその形を除いた領域」と解釈されないよう向きをそろえる。出力も d3 向きになる。
+const toD3Winding = (poly) =>
+  geoArea({ type: "Polygon", coordinates: poly }) > 2 * Math.PI ? poly.map((r) => [...r].reverse()) : poly;
+const partsOf = (g) => (g.type === "Polygon" ? [g.coordinates] : g.coordinates).map(toD3Winding);
+const asGeom = (parts) => ({ type: "MultiPolygon", coordinates: parts });
+const areaM2 = (poly) => geoArea({ type: "Polygon", coordinates: poly }) * (R_KM * 1000) ** 2;
+const bboxDiagKm = ([[w, s], [e, n]]) =>
+  geoDistance([w, s], [e, n]) * R_KM;
+
+function simplifyRing(ring, tolM, lat0) {
+  const kx = Math.cos((lat0 * Math.PI) / 180) * 111_320, ky = 110_574;
+  const pts = ring.map(([x, y]) => ({ x: x * kx, y: y * ky }));
+  const out = simplify(pts, tolM, true).map((p) => [round(p.x / kx, 5), round(p.y / ky, 5)]);
+  const [a, b] = [out[0], out.at(-1)];
+  if (a[0] !== b[0] || a[1] !== b[1]) out.push([...a]);
+  return out.length >= 4 ? out : null;
+}
+
+// 4. 本体
+const dissolved = JSON.parse(readFileSync("raw/build/dissolved.geojson", "utf8"));
+mkdirSync("data/shapes", { recursive: true });
+for (const name of readdirSync("data/shapes")) rmSync(`data/shapes/${name}`); // 前回の出力を消す
+
+const index = [], codesCsv = ["key,code"], report = [], nameMismatches = [];
+for (const f of dissolved.features) {
   const p = f.properties;
-  const [lon, lat] = geoCentroid(f);
-  return {
-    code: p.N03_007,
-    name: p.N03_004 ?? p.N03_003, // 政令市は N03_004 が空で、N03_003 に市名が入る
-    pref: p.N03_001,
-    lat: Math.round(lat * 1e4) / 1e4,
-    lon: Math.round(lon * 1e4) / 1e4,
-  };
-}).sort((a, b) => a.code.localeCompare(b.code));
+  const isWardCity = p.key.startsWith("W|");
+  const code = isWardCity ? byName.get(`${p.N03_001}|${p.N03_004}`) : p.N03_007;
+  if (!code) fail(`政令市のコードが総務省一覧にない: ${p.key}`);
+  const ref = soumu.get(code);
+  if (!ref) fail(`総務省一覧にないコード: ${code} ${p.N03_001}${p.N03_004}`);
+  if (ref.pref !== p.N03_001 || (ref.name !== p.N03_004 && NAME_VARIANTS.get(code) !== ref.name)) {
+    nameMismatches.push(`${code} N03=${p.N03_001}${p.N03_004} 総務省=${ref.pref}${ref.name}`);
+    continue;
+  }
 
-// 3. 検証（どれかが崩れたら書き出さずに失敗させる）
+  // 小島の除外（唯一の陸地なら残す）
+  let parts = partsOf(f.geometry).map((poly) => ({ poly, area: areaM2(poly) }))
+    .sort((a, b) => b.area - a.area);
+  const kept = parts.filter((x) => x.area >= MIN_ISLET_M2);
+  const droppedIslets = parts.length - (kept.length || 1);
+  parts = kept.length ? kept : parts.slice(0, 1);
+
+  // 表示枠：最大の陸地と、その近くのそれなりに大きい島
+  const main = parts[0];
+  const mainC = geoCentroid({ type: "Polygon", coordinates: main.poly });
+  const mainB = geoBounds({ type: "Polygon", coordinates: main.poly });
+  const mainR = bboxDiagKm(mainB) / 2;
+  const viewParts = parts.filter((x) => x === main || (
+    x.area >= main.area * VIEW_MIN_RATIO &&
+    geoDistance(geoCentroid({ type: "Polygon", coordinates: x.poly }), mainC) * R_KM - mainR <= VIEW_MAX_KM
+  ));
+  const viewGeom = asGeom(viewParts.map((x) => x.poly));
+  const [[w, s], [e, n]] = geoBounds(viewGeom);
+  const [lon, lat] = geoCentroid(viewGeom);
+
+  // 間引き：表示枠の大きさに比例
+  const tolM = (bboxDiagKm([[w, s], [e, n]]) * 1000) / DETAIL_DIVISOR;
+  let simplified = parts.map(({ poly }) => {
+    const rings = poly.map((r) => simplifyRing(r, tolM, lat));
+    return rings[0] ? rings.filter(Boolean) : null;
+  }).filter(Boolean);
+  if (!simplified.length) simplified = [main.poly.map((r) => simplifyRing(r, tolM / 10, lat)).filter(Boolean)];
+
+  const vertices = simplified.flat().reduce((sum, r) => sum + r.length, 0);
+  const file = `data/shapes/${code}.json`;
+  writeFileSync(file, JSON.stringify({ type: "Feature", id: code, properties: {}, geometry: asGeom(simplified) }));
+
+  index.push({
+    code, name: p.N03_004, pref: p.N03_001,
+    kana: overrides.get(code) ?? ref.kana,
+    lat: round(lat, 4), lon: round(lon, 4),
+    view: [round(w, 4), round(s, 4), round(e, 4), round(n, 4)],
+  });
+  codesCsv.push(`"${p.key}",${code}`);
+  report.push({ code, label: p.N03_001 + p.N03_004, vertices, kb: statSync(file).size / 1024,
+    areaKm2: parts.reduce((a, x) => a + x.area, 0) / 1e6, parts: parts.length,
+    outOfView: parts.length - viewParts.length, droppedIslets });
+}
+index.sort((a, b) => a.code.localeCompare(b.code));
+
+// 5. 検証
+if (nameMismatches.length) fail(`名前が一致しない（字体違いなら NAME_VARIANTS に追加）:\n  ${nameMismatches.join("\n  ")}`);
 const codes = new Set(index.map((m) => m.code));
+const soumuCodes = new Set(soumu.keys());
+const missing = [...soumuCodes].filter((c) => !codes.has(c));
+const extra = [...codes].filter((c) => !soumuCodes.has(c));
+if (missing.length || extra.length) fail(`総務省一覧との過不足 不足=${missing} 余分=${extra}`);
 if (index.length !== EXPECTED_COUNT) fail(`件数 ${index.length}（期待 ${EXPECTED_COUNT}）`);
 if (codes.size !== index.length) fail("コードが重複している");
-for (const m of index) {
-  if (!/^\d{5}$/.test(m.code)) fail(`コード形式が不正: ${m.code}`);
-  if (!m.name || !m.pref) fail(`名前か都道府県が空: ${m.code}`);
-  if (!(m.lat > 20 && m.lat < 46 && m.lon > 122 && m.lon < 154)) fail(`重心が日本の範囲外: ${m.code} ${m.name}`);
-}
-for (const c of NORTHERN_VILLAGES) if (!codes.has(c)) fail(`北方領土の村がない: ${c}`);
+for (const c of overrides.keys()) if (!codes.has(c)) fail(`kana-overrides.csv に存在しないコード: ${c}`);
+for (const m of index) if (!/^[ァ-ヴー・ヶ]+$/.test(m.kana)) fail(`読みがカタカナでない: ${m.code} ${m.name} "${m.kana}"`);
+const thin = report.filter((r) => r.vertices < MIN_VERTICES);
+if (thin.length) fail(`頂点が少なすぎる: ${thin.map((r) => `${r.label}(${r.vertices})`).join(" ")}`);
+const heavy = report.filter((r) => r.kb > MAX_FILE_KB);
+if (heavy.length) fail(`ファイルが重すぎる: ${heavy.map((r) => `${r.label}(${r.kb.toFixed(0)}KB)`).join(" ")}`);
+if (readdirSync("data/shapes").length !== index.length) fail("形のファイル数が一覧と一致しない");
 
-const topo = JSON.parse(readFileSync(OUT_TOPO, "utf8"));
-const topoIds = new Set(topo.objects.municipalities.geometries.map((g) => g.id));
-for (const c of codes) if (!topoIds.has(c)) fail(`形が欠けている: ${c}`);
-if (topoIds.size !== codes.size) fail("形と一覧の件数が一致しない");
+writeFileSync("data/index.json", JSON.stringify(index));
+writeFileSync("raw/build/codes.csv", codesCsv.join("\n") + "\n");
+writeFileSync("raw/build/report.json", JSON.stringify(report));
 
-writeFileSync(OUT_INDEX, JSON.stringify(index));
-const kb = (p) => (statSync(p).size / 1024).toFixed(0);
-console.log(`OK: ${index.length}件 / ${OUT_TOPO} ${kb(OUT_TOPO)}KB / ${OUT_INDEX} ${kb(OUT_INDEX)}KB`);
+// 6. 要約
+const total = report.reduce((a, r) => a + r.kb, 0);
+const v = report.map((r) => r.vertices).sort((a, b) => a - b);
+console.log(`OK: ${index.length}件 / shapes 合計 ${(total / 1024).toFixed(1)}MB（最大 ${Math.max(...report.map((r) => r.kb)).toFixed(0)}KB）`);
+console.log(`頂点数: 最小 ${v[0]} / 中央値 ${v[v.length >> 1]} / 最大 ${v.at(-1)}`);
+console.log(`表示枠の外に島がある: ${report.filter((r) => r.outOfView).length}件 / 小島を除いた: ${report.filter((r) => r.droppedIslets > 0).length}件`);

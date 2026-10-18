@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# 段階2：元データ（smartnews-smri/japan-topography）を raw/ に取得する
+# 元データを raw/ に取得する（raw/ は commit しない）
+#   1. 国土数値情報 行政区域データ N03（2026年1月1日時点、全国、CC BY 4.0）
+#   2. 総務省 全国地方公共団体コード一覧（令和6年1月1日更新、公共データ利用規約）… 過不足の突き合わせとカタカナの読み
 set -euo pipefail
 cd "$(dirname "$0")/.."
-REPO=https://github.com/smartnews-smri/japan-topography
-SHA=$(git ls-remote "$REPO" refs/heads/main | cut -f1)
-[ -n "$SHA" ] || { echo "コミットを取得できない" >&2; exit 1; }
-FILE=N03-21_210101_designated_city.json   # 政令市の区を結合済みの全国版（簡素化1%）
-URL="https://raw.githubusercontent.com/smartnews-smri/japan-topography/$SHA/data/municipality/topojson/s0010/$FILE"
 mkdir -p raw
-curl -fsSL "$URL" -o "raw/$FILE"
-echo "$SHA  $FILE" > raw/SOURCE.txt
-echo "取得: $FILE @ $SHA ($(wc -c < raw/$FILE) bytes)"
+URL=https://nlftp.mlit.go.jp/ksj/gml/data/N03/N03-2026/N03-20260101_GML.zip
+ZIP=raw/N03-20260101_GML.zip
+[ -f "$ZIP" ] || curl -fsSL "$URL" -o "$ZIP"
+rm -rf raw/N03 && mkdir -p raw/N03 && unzip -q -o "$ZIP" -d raw/N03
+{
+  echo "url: $URL"
+  echo "sha256: $(sha256sum "$ZIP" | cut -d' ' -f1)"
+  echo "fetched: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > raw/SOURCE-N03.txt
+CODES_URL=https://www.soumu.go.jp/main_content/000925835.xlsx
+curl -fsSL "$CODES_URL" -o raw/soumu-codes.xlsx
+{
+  echo "url: $CODES_URL"
+  echo "sha256: $(sha256sum raw/soumu-codes.xlsx | cut -d' ' -f1)"
+} > raw/SOURCE-codes.txt
+cat raw/SOURCE-N03.txt raw/SOURCE-codes.txt

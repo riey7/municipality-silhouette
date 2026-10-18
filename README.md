@@ -7,17 +7,47 @@
 
 ```
 npm install
-npm run fetch        # raw/ に元データを取得（commitしない）
-npm run build:data   # data/ を生成し、件数・コード・重心を検証する
+npm run fetch        # raw/ に元データを取得（約770MB、commitしない）
+npm run build:data   # data/ を作り直し、総務省一覧との過不足・読み・頂点数・サイズを検証する
 npm run serve        # http://localhost:8000/check.html で形を確認
 ```
 
-- 基準日：2021年1月1日（元データの時点）
-- 政令指定都市は区を結合して1市として扱う
-- 北方領土の6村を含む。所属未定地は除く
+加工は3段階（`scripts/build.sh`）。
+
+1. `dissolve.sh`：N03を市区町村単位にまとめる。政令市は区を結合して1市にする。所属未定地は除く
+2. `build-data.mjs`：出題用の形と一覧を作る
+   - 面積0.01km²未満の小島を除く（唯一の陸地なら残す）
+   - 表示枠：最大の陸地と、そこから50km以内かつ面積が1%以上の島
+   - 間引き：表示枠の対角線の1/800より小さい凹凸を消す（大きさに比例）
+3. `build-japan.sh`：答え合わせ用の全国地図（境界線を共有したまま800m単位で間引く）
+
+基準値は `build-data.mjs` の冒頭にまとめてある。
+
+## 出力
+
+| ファイル | 内容 |
+| --- | --- |
+| `data/index.json` | コード・名前・都道府県・読み（カタカナ）・代表点・表示枠 |
+| `data/shapes/<code>.json` | 出題用の形（1件1ファイル） |
+| `data/japan.topojson` | 全国地図（市区町村と都道府県） |
+
+- 基準日：2026年1月1日（N03）
 - 件数：1,747（1,718市町村 + 東京23区 + 北方領土6村）
+
+## 読みの修正
+
+読みは総務省の一覧のカタカナを使う。直したい場合は `data/kana-overrides.csv` に行を足して `npm run build:data` を再実行する。
+
+```
+code,kana,note
+39405,ユスハラチョウ,例：修正理由をメモ
+```
+
+存在しないコードやカタカナ以外の読みは、加工時に失敗する。
 
 ## 出典
 
-出典：国土数値情報（行政区域データ）（国土交通省）を加工して作成
-加工元：smartnews-smri/japan-topography（取得したコミットは raw/SOURCE.txt に記録）
+- 「国土数値情報（行政区域データ）」（国土交通省）（https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-2026.html）を加工して作成。CC BY 4.0。測量法に基づく国土地理院長承認（複製）R 7JHf 351
+- 「都道府県コード及び市区町村コード」（総務省）（https://www.soumu.go.jp/denshijiti/code.html）を加工して作成。公共データ利用規約（第1.0版）
+
+取得したファイルのURLとSHA-256は raw/SOURCE-*.txt に記録される。
