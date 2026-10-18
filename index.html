@@ -11,13 +11,16 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
-  main { max-width: 480px; margin: 0 auto; padding: 16px 16px 32px; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  /* 1画面に収める：シルエットの枠が残りの高さを使い、ほかの部品は固定の高さ。スクロールせずに最後まで遊べる */
+  main { max-width: 480px; margin: 0 auto; padding: 12px 16px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  .stage { flex: 1 1 auto; min-height: 120px; container-type: size; display: grid; place-items: center; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
   h1 { font-size: 1.2rem; margin: 0; white-space: nowrap; }
   #mode { white-space: nowrap; }
   .muted { color: var(--muted); font-size: .85rem; }
-  .silhouette { display: block; width: 100%; aspect-ratio: 1; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-  form { display: flex; gap: 8px; margin-top: 14px; }
+  .silhouette { display: block; width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+  form { display: flex; gap: 8px; margin-top: 10px; }
+  form[hidden], .again[hidden] { display: none; }
   .combo { position: relative; flex: 1; min-width: 0; }
   input { width: 100%; font: inherit; font-size: 1.05rem; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
   button { font: inherit; padding: 10px 16px; border: 1px solid var(--shape); border-radius: 8px; background: var(--shape); color: var(--paper); cursor: pointer; white-space: nowrap; }
@@ -34,9 +37,9 @@
   #suggestions li { min-height: 0; padding: 8px 10px; border: none; border-radius: 6px; background: transparent; cursor: pointer; justify-content: space-between; }
   #suggestions li[aria-selected="true"], #suggestions li:hover { background: color-mix(in srgb, var(--shape) 14%, transparent); }
   #suggestions small { color: var(--muted); font-size: .8rem; }
-  #message { min-height: 1.4em; margin: 8px 0 0; font-size: .9rem; color: var(--miss); }
-  ol { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
-  li { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  #message { min-height: 1.3em; margin: 4px 0 0; font-size: .85rem; line-height: 1.3; color: var(--miss); }
+  ol { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 4px; }
+  li { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
   li .no { color: var(--muted); font-size: .8rem; width: 1.5em; }
   li.miss .mark { color: var(--miss); font-weight: bold; }
   li.miss .mark.same-pref { color: var(--hit); } /* 正解と同じ都道府県 */
@@ -55,7 +58,7 @@
   dialog .map { margin: 10px 0 0; }
   dialog .map a { color: var(--shape); font-weight: bold; }
   dialog .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
-  .again { text-align: center; margin: 14px 0 0; }
+  .again { text-align: center; margin: 10px 0 0; }
   .title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   button.small { padding: 4px 12px; font-size: .85rem; }
   /* アイコンだけのボタン。icons/*.svg を型抜きに使い、色は文字色に合わせる（ダークモードでも変わる） */
@@ -77,7 +80,7 @@
   .dist-row .bar { height: 18px; min-width: 4px; border-radius: 0 4px 4px 0; background: color-mix(in srgb, var(--shape) 45%, var(--card)); }
   .dist-row.latest .bar { background: var(--shape); }
   .dist-row .count { font-size: .85rem; color: var(--ink); }
-  footer { margin-top: 28px; font-size: .75rem; color: var(--muted); line-height: 1.6; }
+  footer { max-width: 480px; margin: 0 auto; padding: 16px 16px 24px; font-size: .75rem; color: var(--muted); line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -90,7 +93,7 @@
     <button id="open-stats" type="button" class="icon" aria-label="統計" title="統計"><span class="glyph" style="--icon: url(icons/stats.svg)" aria-hidden="true"></span></button>
   </header>
 
-  <img id="silhouette" class="silhouette" alt="出題中の市区町村のシルエット">
+  <div class="stage"><img id="silhouette" class="silhouette" alt="出題中の市区町村のシルエット"></div>
 
   <form id="form" autocomplete="off">
     <div class="combo">
@@ -100,15 +103,15 @@
     </div>
     <button id="submit" type="submit" disabled>回答</button>
   </form>
+  <!-- 終わったら回答欄の代わりに出す -->
+  <p id="again-row" class="again" hidden><button id="again" type="button" class="secondary">もう一問</button></p>
   <p id="message" role="status"></p>
 
   <ol id="guesses" aria-label="回答の履歴"></ol>
-  <p class="again"><button id="again" type="button" class="secondary" hidden>もう一問</button></p>
-
-  <footer>
-    出典：国土数値情報（行政区域データ）（国土交通省）を加工して作成／読み：総務省「全国地方公共団体コード」を加工して作成
-  </footer>
 </main>
+<footer>
+  出典：国土数値情報（行政区域データ）（国土交通省）を加工して作成／読み：総務省「全国地方公共団体コード」を加工して作成
+</footer>
 
 <dialog id="result">
   <h2 id="result-title"></h2>
@@ -323,7 +326,8 @@
     const over = isOver();
     $("guess").disabled = over;
     $("submit").disabled = over;
-    $("again").hidden = !over;
+    $("form").hidden = over;
+    $("again-row").hidden = !over;
     $("guess").placeholder = over ? "終了しました" : `市区町村名（残り${MAX_GUESSES - guesses.length}回）`;
   }
 
