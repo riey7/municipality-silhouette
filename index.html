@@ -12,8 +12,9 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
   main { max-width: 480px; margin: 0 auto; padding: 16px 16px 32px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-  h1 { font-size: 1.2rem; margin: 0; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  h1 { font-size: 1.2rem; margin: 0; white-space: nowrap; }
+  #mode { white-space: nowrap; }
   .muted { color: var(--muted); font-size: .85rem; }
   .silhouette { display: block; width: 100%; aspect-ratio: 1; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
   form { display: flex; gap: 8px; margin-top: 14px; }
@@ -51,8 +52,12 @@
   dialog .map a { color: var(--shape); font-weight: bold; }
   dialog .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
   .again { text-align: center; margin: 14px 0 0; }
-  .header-right { display: flex; align-items: baseline; gap: 10px; }
+  .title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   button.small { padding: 4px 12px; font-size: .85rem; }
+  /* アイコンだけのボタン。icons/*.svg を型抜きに使い、色は文字色に合わせる（ダークモードでも変わる） */
+  button.icon { display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: none; background: transparent; color: var(--ink); align-self: center; }
+  button.icon:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  button.icon .glyph { width: 24px; height: 24px; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
   #stats { text-align: left; }
   #stats h2 { text-align: center; }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 18px; }
@@ -73,11 +78,11 @@
 <body>
 <main>
   <header>
-    <h1>市区町村シルエット</h1>
-    <span class="header-right">
+    <div class="title">
+      <h1>市区町村シルエット</h1>
       <span id="mode" class="muted"></span>
-      <button id="open-stats" type="button" class="secondary small">統計</button>
-    </span>
+    </div>
+    <button id="open-stats" type="button" class="icon" aria-label="統計" title="統計"><span class="glyph" style="--icon: url(icons/stats.svg)" aria-hidden="true"></span></button>
   </header>
 
   <img id="silhouette" class="silhouette" alt="出題中の市区町村のシルエット">
@@ -221,7 +226,7 @@
       const date = todayJst();
       answer = pool[hash(date) % pool.length];
       storageKey = `daily:${date}`;
-      $("mode").textContent = `今日の問題（${date}）`;
+      $("mode").textContent = `今日の問題（${Number(date.slice(5, 7))}/${Number(date.slice(8))}）`;
     } else {
       answer = pool[Math.floor(Math.random() * pool.length)];
       storageKey = null;
