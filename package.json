@@ -1,0 +1,15 @@
+{
+  "name": "municipality-silhouette",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch": "bash scripts/fetch-data.sh",
+    "build:data": "node scripts/build-data.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "d3-geo": "3.1.1",
+    "mapshaper": "0.6.102",
+    "topojson-client": "3.1.0"
+  }
+}
