@@ -18,6 +18,16 @@ const EXPECTED_COUNT = 1747;
 const NAME_VARIANTS = new Map([
   ["39405", "梼原町"], // N03は「檮原町」
 ]);
+// 政令市（区を結合して1市にする）。N03の区がこの表に合わなければ失敗させる
+const DESIGNATED_CITIES = new Map(Object.entries({
+  "北海道|札幌市": "01100", "宮城県|仙台市": "04100", "埼玉県|さいたま市": "11100",
+  "千葉県|千葉市": "12100", "神奈川県|横浜市": "14100", "神奈川県|川崎市": "14130",
+  "神奈川県|相模原市": "14150", "新潟県|新潟市": "15100", "静岡県|静岡市": "22100",
+  "静岡県|浜松市": "22130", "愛知県|名古屋市": "23100", "京都府|京都市": "26100",
+  "大阪府|大阪市": "27100", "大阪府|堺市": "27140", "兵庫県|神戸市": "28100",
+  "岡山県|岡山市": "33100", "広島県|広島市": "34100", "福岡県|北九州市": "40100",
+  "福岡県|福岡市": "40130", "熊本県|熊本市": "43100",
+}));
 const MIN_VERTICES = 12;
 const MAX_FILE_KB = 150;
 
@@ -29,13 +39,11 @@ const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 const book = XLSX.readFile("raw/soumu-codes.xlsx");
 const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1 }).slice(1);
 const soumu = new Map();       // code5 → { pref, name, kana }
-const byName = new Map();      // "都道府県|市区町村" → code5
 for (const [code6, pref, name, , kanaHalf] of rows) {
   if (!code6 || !name) continue; // 都道府県の行は除く
   const code = String(code6).padStart(6, "0").slice(0, 5);
   const kana = String(kanaHalf ?? "").normalize("NFKC");
   soumu.set(code, { pref, name, kana });
-  byName.set(`${pref}|${name}`, code);
 }
 
 // 2. 読みの手修正（data/kana-overrides.csv：code,kana,note）
@@ -72,12 +80,13 @@ const dissolved = JSON.parse(readFileSync("raw/build/dissolved.geojson", "utf8")
 mkdirSync("data/shapes", { recursive: true });
 for (const name of readdirSync("data/shapes")) rmSync(`data/shapes/${name}`); // 前回の出力を消す
 
-const index = [], codesCsv = ["key,code"], report = [], nameMismatches = [];
+const index = [], codesCsv = ["key,code"], report = [], nameMismatches = [], seenCities = new Set();
 for (const f of dissolved.features) {
   const p = f.properties;
   const isWardCity = p.key.startsWith("W|");
-  const code = isWardCity ? byName.get(`${p.N03_001}|${p.N03_004}`) : p.N03_007;
-  if (!code) fail(`政令市のコードが総務省一覧にない: ${p.key}`);
+  const code = isWardCity ? DESIGNATED_CITIES.get(`${p.N03_001}|${p.N03_004}`) : p.N03_007;
+  if (!code) fail(`政令市の表にない区: ${p.key}`);
+  if (isWardCity) seenCities.add(code);
   const ref = soumu.get(code);
   if (!ref) fail(`総務省一覧にないコード: ${code} ${p.N03_001}${p.N03_004}`);
   if (ref.pref !== p.N03_001 || (ref.name !== p.N03_004 && NAME_VARIANTS.get(code) !== ref.name)) {
@@ -131,6 +140,8 @@ for (const f of dissolved.features) {
 index.sort((a, b) => a.code.localeCompare(b.code));
 
 // 5. 検証
+const absentCities = [...DESIGNATED_CITIES.values()].filter((c) => !seenCities.has(c));
+if (absentCities.length) fail(`N03に区が見つからない政令市: ${absentCities}`);
 if (nameMismatches.length) fail(`名前が一致しない（字体違いなら NAME_VARIANTS に追加）:\n  ${nameMismatches.join("\n  ")}`);
 const codes = new Set(index.map((m) => m.code));
 const soumuCodes = new Set(soumu.keys());
