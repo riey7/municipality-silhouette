@@ -27,6 +27,10 @@
   #suggestions { position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; display: block; gap: 0;
     background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15); max-height: min(320px, 45vh); overflow-y: auto; overscroll-behavior: contain; }
   #suggestions[hidden] { display: none; }
+  /* PC（マウス操作）では日本語入力の変換候補が入力欄の下に出て重なるので、候補は入力欄の上に出す */
+  @media (hover: hover) and (pointer: fine) {
+    #suggestions { top: auto; bottom: calc(100% + 4px); box-shadow: 0 -6px 20px rgb(0 0 0 / .15); }
+  }
   #suggestions li { min-height: 0; padding: 8px 10px; border: none; border-radius: 6px; background: transparent; cursor: pointer; justify-content: space-between; }
   #suggestions li[aria-selected="true"], #suggestions li:hover { background: color-mix(in srgb, var(--shape) 14%, transparent); }
   #suggestions small { color: var(--muted); font-size: .8rem; }
@@ -129,7 +133,10 @@
   <h3>何回目で正解したか</h3>
   <div id="stat-dist" class="dist" role="list"></div>
   <p class="muted" style="margin: 8px 0 0; font-size: .75rem;">濃い色は直近の正解。記録はこのブラウザにだけ保存されます</p>
-  <div class="actions"><button id="stats-close" type="button" class="secondary">閉じる</button></div>
+  <div class="actions">
+    <button id="stats-next" type="button" hidden>もう一問</button>
+    <button id="stats-close" type="button" class="secondary">閉じる</button>
+  </div>
 </dialog>
 
 <script type="module">
@@ -238,6 +245,7 @@
       row.querySelector(".bar").style.width = `calc((100% - 3em) * ${count / max})`;
       return row;
     }));
+    $("stats-next").hidden = !isOver(); // 結果が出たあとなら、統計からそのまま次の問題へ進める
     if (!$("stats").open) $("stats").showModal();
   }
 
@@ -436,6 +444,7 @@
   $("open-stats").addEventListener("click", showStats);
   $("result-stats").addEventListener("click", () => { $("result").close(); showStats(); });
   $("stats-close").addEventListener("click", () => $("stats").close());
+  $("stats-next").addEventListener("click", () => { $("stats").close(); start("practice"); });
   $("next").addEventListener("click", () => { $("result").close(); start("practice"); });
   $("again").addEventListener("click", () => start("practice"));
 
