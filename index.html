@@ -51,6 +51,22 @@
   dialog .map a { color: var(--shape); font-weight: bold; }
   dialog .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
   .again { text-align: center; margin: 14px 0 0; }
+  .header-right { display: flex; align-items: baseline; gap: 10px; }
+  button.small { padding: 4px 12px; font-size: .85rem; }
+  #stats { text-align: left; }
+  #stats h2 { text-align: center; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 18px; }
+  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
+  .tile .value { display: block; font-size: 1.8rem; font-weight: bold; font-variant-numeric: tabular-nums; }
+  .tile .label { font-size: .8rem; color: var(--muted); }
+  #stats h3 { font-size: .9rem; margin: 0 0 8px; }
+  .dist { display: grid; gap: 4px; }
+  .dist-row { display: grid; grid-template-columns: 1.6em 1fr; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .dist-row .n { color: var(--muted); font-size: .85rem; text-align: right; }
+  .dist-row .track { display: flex; align-items: center; gap: 6px; min-height: 22px; }
+  .dist-row .bar { height: 18px; min-width: 4px; border-radius: 0 4px 4px 0; background: color-mix(in srgb, var(--shape) 45%, var(--card)); }
+  .dist-row.latest .bar { background: var(--shape); }
+  .dist-row .count { font-size: .85rem; color: var(--ink); }
   footer { margin-top: 28px; font-size: .75rem; color: var(--muted); line-height: 1.6; }
 </style>
 </head>
@@ -58,7 +74,10 @@
 <main>
   <header>
     <h1>市区町村シルエット</h1>
-    <span id="mode" class="muted"></span>
+    <span class="header-right">
+      <span id="mode" class="muted"></span>
+      <button id="open-stats" type="button" class="secondary small">統計</button>
+    </span>
   </header>
 
   <img id="silhouette" class="silhouette" alt="出題中の市区町村のシルエット">
@@ -90,8 +109,21 @@
   <p class="map"><a id="result-map" target="_blank" rel="noopener">Google マップで見る ↗</a></p>
   <div class="actions">
     <button id="next" type="button" autofocus>もう一問</button>
+    <button id="result-stats" type="button" class="secondary">統計</button>
     <button id="close" type="button" class="secondary">閉じる</button>
   </div>
+</dialog>
+
+<dialog id="stats" aria-labelledby="stats-title">
+  <h2 id="stats-title">統計</h2>
+  <div class="tiles">
+    <div class="tile"><span id="stat-rate" class="value"></span><span class="label">成功率</span></div>
+    <div class="tile"><span id="stat-played" class="value"></span><span class="label">挑戦回数</span></div>
+  </div>
+  <h3>何回目で正解したか</h3>
+  <div id="stat-dist" class="dist" role="list"></div>
+  <p class="muted" style="margin: 8px 0 0; font-size: .75rem;">濃い色は直近の正解。記録はこのブラウザにだけ保存されます</p>
+  <div class="actions"><button id="stats-close" type="button" class="secondary">閉じる</button></div>
 </dialog>
 
 <script type="module">
@@ -141,6 +173,46 @@
     load(key) { try { return JSON.parse(localStorage.getItem(key)) ?? []; } catch { return []; } },
     save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 保存できなくても遊べる */ } },
   };
+
+  // ── 統計（このブラウザにだけ保存。今日の問題と練習問題の両方を数える）──
+  const STATS_KEY = "stats:v1";
+  const emptyStats = () => ({ played: 0, wins: 0, dist: [0, 0, 0, 0, 0, 0], latest: null });
+  function loadStats() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STATS_KEY));
+      if (s && Array.isArray(s.dist) && s.dist.length === MAX_GUESSES) return s;
+    } catch { /* 壊れていたら作り直す */ }
+    return emptyStats();
+  }
+  function recordResult() {
+    const s = loadStats();
+    s.played += 1;
+    if (solved()) {
+      const n = guesses.indexOf(answer.code) + 1;
+      s.wins += 1;
+      s.dist[n - 1] += 1;
+      s.latest = n;
+    } else {
+      s.latest = null;
+    }
+    store.save(STATS_KEY, s);
+  }
+  function showStats() {
+    const s = loadStats();
+    $("stat-rate").textContent = s.played ? `${Math.round((s.wins / s.played) * 100)}%` : "–";
+    $("stat-played").textContent = String(s.played);
+    const max = Math.max(1, ...s.dist);
+    $("stat-dist").replaceChildren(...s.dist.map((count, i) => {
+      const row = document.createElement("div");
+      row.className = i + 1 === s.latest ? "dist-row latest" : "dist-row";
+      row.setAttribute("role", "listitem");
+      row.title = `${i + 1}回目で正解：${count}回`;
+      row.innerHTML = `<span class="n">${i + 1}</span><span class="track"><span class="bar"></span><span class="count">${count}</span></span>`;
+      row.querySelector(".bar").style.width = `calc((100% - 3em) * ${count / max})`;
+      return row;
+    }));
+    if (!$("stats").open) $("stats").showModal();
+  }
 
   let answer, guesses, storageKey;
 
@@ -244,7 +316,7 @@
       ? `同じ名前が${matches.length}件あります（${matches.map((m) => m.pref).join("・")}）。どれも不正解です`
       : "";
     render();
-    if (isOver()) showResult();
+    if (isOver()) { recordResult(); showResult(); }
   }
 
   // ── 入力候補 ──
@@ -333,6 +405,9 @@
     }
   });
   $("close").addEventListener("click", () => $("result").close());
+  $("open-stats").addEventListener("click", showStats);
+  $("result-stats").addEventListener("click", () => { $("result").close(); showStats(); });
+  $("stats-close").addEventListener("click", () => $("stats").close());
   $("next").addEventListener("click", () => { $("result").close(); start("practice"); });
   $("again").addEventListener("click", () => start("practice"));
 
