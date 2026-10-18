@@ -19,8 +19,7 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
   figure { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
   svg { display: block; width: 100%; }
-  .shape { aspect-ratio: 1; }
-  .shape path { fill: var(--shape); }
+  .shape { display: block; width: 100%; aspect-ratio: 1; }
   figcaption { font-size: .85rem; margin-top: 6px; }
   figcaption small { color: var(--muted); display: block; }
   #japan { max-width: 720px; }
@@ -37,6 +36,7 @@
 </header>
 
 <h2>ランダム</h2>
+<p class="note">画像をクリックすると原寸で開きます。</p>
 <button id="reroll" type="button" disabled>別の20件を表示</button>
 <div id="random" class="grid" style="margin-top:12px"></div>
 
@@ -54,7 +54,6 @@
   import { geoMercator, geoPath } from "https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/+esm";
   import { feature, mesh } from "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/+esm";
 
-  const SIZE = 200, PAD = 10;
   const $ = (id) => document.getElementById(id);
   const [index, japan] = await Promise.all([
     fetch("data/index.json").then((r) => r.json()),
@@ -65,21 +64,17 @@
   const report = await fetch("raw/build/report.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
   $("status").textContent = `${index.length}件`;
 
-  const loadShape = (code) => fetch(`data/shapes/${code}.json`).then((r) => r.json());
-
-  async function card(code) {
+  // 形は加工時に描いた画像（data/images/<code>.svg）をそのまま表示する。クリックで原寸表示
+  function card(code) {
     const m = byCode.get(code);
-    const [w, s, e, n] = m.view;
-    const frame = { type: "MultiPoint", coordinates: [[w, s], [e, n], [w, n], [e, s]] };
-    const projection = geoMercator().fitExtent([[PAD, PAD], [SIZE - PAD, SIZE - PAD]], frame);
     const fig = document.createElement("figure");
     fig.innerHTML =
-      `<svg class="shape" viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="${m.pref}${m.name}の形">` +
-      `<path d="${geoPath(projection)(await loadShape(code))}"/></svg>` +
+      `<a href="data/images/${code}.svg" target="_blank" rel="noopener">` +
+      `<img class="shape" src="data/images/${code}.svg" alt="${m.pref}${m.name}の形" loading="lazy"></a>` +
       `<figcaption>${m.pref} ${m.name}<small>${m.kana} ・ ${m.code}</small></figcaption>`;
     return fig;
   }
-  const fill = async (el, codes) => el.replaceChildren(...(await Promise.all(codes.map(card))));
+  const fill = async (el, codes) => el.replaceChildren(...codes.map(card));
 
   // 全国地図
   const munis = feature(japan, japan.objects.municipalities);

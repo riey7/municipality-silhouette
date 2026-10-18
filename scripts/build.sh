@@ -4,4 +4,5 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 bash scripts/dissolve.sh
 node --max-old-space-size=2800 scripts/build-data.mjs
+node scripts/render-images.mjs
 bash scripts/build-japan.sh

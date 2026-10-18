@@ -1,5 +1,5 @@
 // 加工2：中間ファイルから、出題用の形（1件1ファイル）と一覧を作る
-//   data/shapes/<code>.json … 出題用の形（市区町村ごとに大きさに比例して間引く）
+//   raw/build/shapes/<code>.json … 出題用の形（市区町村ごとに大きさに比例して間引く。render-images.mjs が画像にする）
 //   data/index.json         … コード・名前・都道府県・読み・代表点・表示枠
 //   raw/build/codes.csv     … 全国地図（build-japan.sh）用のキー→コード対応
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync } from "node:fs";
@@ -31,7 +31,6 @@ const DESIGNATED_CITIES = new Map(Object.entries({
   "福岡県|福岡市": "40130", "熊本県|熊本市": "43100",
 }));
 const MIN_VERTICES = 12;
-const MAX_FILE_KB = 1000;
 
 const R_KM = 6371.0088;
 const fail = (msg) => { console.error(`NG: ${msg}`); process.exit(1); };
@@ -79,8 +78,9 @@ function simplifyRing(ring, tolM, lat0) {
 
 // 4. 本体
 const dissolved = JSON.parse(readFileSync("raw/build/dissolved.geojson", "utf8"));
-mkdirSync("data/shapes", { recursive: true });
-for (const name of readdirSync("data/shapes")) rmSync(`data/shapes/${name}`); // 前回の出力を消す
+const SHAPES = "raw/build/shapes";
+mkdirSync(SHAPES, { recursive: true });
+for (const name of readdirSync(SHAPES)) rmSync(`${SHAPES}/${name}`); // 前回の出力を消す
 
 const index = [], codesCsv = ["key,code"], report = [], nameMismatches = [], seenCities = new Set();
 for (const f of dissolved.features) {
@@ -125,7 +125,7 @@ for (const f of dissolved.features) {
   if (!simplified.length) simplified = [main.poly.map((r) => simplifyRing(r, tolM / 10, lat)).filter(Boolean)];
 
   const vertices = simplified.flat().reduce((sum, r) => sum + r.length, 0);
-  const file = `data/shapes/${code}.json`;
+  const file = `${SHAPES}/${code}.json`;
   writeFileSync(file, JSON.stringify({ type: "Feature", id: code, properties: {}, geometry: asGeom(simplified) }));
 
   index.push({
@@ -156,9 +156,7 @@ for (const c of overrides.keys()) if (!codes.has(c)) fail(`kana-overrides.csv �
 for (const m of index) if (!/^[ァ-ヴー・ヶ]+$/.test(m.kana)) fail(`読みがカタカナでない: ${m.code} ${m.name} "${m.kana}"`);
 const thin = report.filter((r) => r.vertices < MIN_VERTICES);
 if (thin.length) fail(`頂点が少なすぎる: ${thin.map((r) => `${r.label}(${r.vertices})`).join(" ")}`);
-const heavy = report.filter((r) => r.kb > MAX_FILE_KB);
-if (heavy.length) fail(`ファイルが重すぎる: ${heavy.map((r) => `${r.label}(${r.kb.toFixed(0)}KB)`).join(" ")}`);
-if (readdirSync("data/shapes").length !== index.length) fail("形のファイル数が一覧と一致しない");
+if (readdirSync(SHAPES).length !== index.length) fail("形のファイル数が一覧と一致しない");
 
 writeFileSync("data/index.json", JSON.stringify(index));
 writeFileSync("raw/build/codes.csv", codesCsv.join("\n") + "\n");
@@ -167,7 +165,7 @@ writeFileSync("raw/build/report.json", JSON.stringify(report));
 // 6. 要約
 const total = report.reduce((a, r) => a + r.kb, 0);
 const v = report.map((r) => r.vertices).sort((a, b) => a - b);
-console.log(`OK: ${index.length}件 / shapes 合計 ${(total / 1024).toFixed(1)}MB（最大 ${Math.max(...report.map((r) => r.kb)).toFixed(0)}KB）`);
+console.log(`OK: ${index.length}件 / 中間の形 合計 ${(total / 1024).toFixed(1)}MB（最大 ${Math.max(...report.map((r) => r.kb)).toFixed(0)}KB）`);
 console.log(`細かさ: 対角線の1/${DETAIL_DIVISOR}`);
 console.log(`頂点数: 最小 ${v[0]} / 中央値 ${v[v.length >> 1]} / 最大 ${v.at(-1)}`);
 console.log(`表示枠の外に島がある: ${report.filter((r) => r.outOfView).length}件 / 小島を除いた: ${report.filter((r) => r.droppedIslets > 0).length}件`);

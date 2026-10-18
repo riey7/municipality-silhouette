@@ -12,23 +12,24 @@ npm run build:data   # data/ を作り直し、総務省一覧との過不足・
 npm run serve        # http://localhost:8000/check.html で形を確認
 ```
 
-加工は3段階（`scripts/build.sh`）。
+加工はすべて手元で行い、サーバーには出来上がった画像と一覧だけを置く。加工は4段階（`scripts/build.sh`）。
 
 1. `dissolve.sh`：N03を市区町村単位にまとめる。政令市は区を結合して1市にする（20市のコード表と照合し、合わない区があれば失敗）。所属未定地は除く
-2. `build-data.mjs`：出題用の形と一覧を作る
+2. `build-data.mjs`：出題用の形（中間ファイル `raw/build/shapes/`、commitしない）と一覧を作る
    - 面積0.01km²未満の小島を除く（唯一の陸地なら残す）
    - 表示枠：最大の陸地と、そこから50km以内かつ面積が1%以上の島
    - 間引き：表示枠の対角線の1/7200より小さい凹凸を消す（大きさに比例）。`DETAIL=2400 npm run build:data` のように実行時に変えられる
-3. `build-japan.sh`：答え合わせ用の全国地図（境界線を共有したまま800m単位で間引く）
+3. `render-images.mjs`：形を表示枠に合わせて投影し、画像 `data/images/<code>.svg` にする。間引きは画像上で0.3px（1000px四方）
+4. `build-japan.sh`：答え合わせ用の全国地図（境界線を共有したまま800m単位で間引く）
 
-基準値は `build-data.mjs` の冒頭にまとめてある。
+基準値は `build-data.mjs` と `render-images.mjs` の冒頭にまとめてある。
 
 ## 出力
 
 | ファイル | 内容 |
 | --- | --- |
 | `data/index.json` | コード・名前・都道府県・読み（カタカナ）・代表点・表示枠 |
-| `data/shapes/<code>.json` | 出題用の形（1件1ファイル） |
+| `data/images/<code>.svg` | 出題用の形の画像（1件1ファイル。`<img>` で表示するだけ） |
 | `data/japan.topojson` | 全国地図（市区町村と都道府県） |
 
 - 基準日：2026年1月1日（N03）
