@@ -47,6 +47,8 @@
   dialog h2.miss { color: var(--miss); }
   dialog .answer { font-size: 1.15rem; margin: 10px 0 2px; }
   dialog img { display: block; width: 160px; height: 160px; margin: 12px auto; }
+  dialog .map { margin: 10px 0 0; }
+  dialog .map a { color: var(--shape); font-weight: bold; }
   dialog .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
   .again { text-align: center; margin: 14px 0 0; }
   footer { margin-top: 28px; font-size: .75rem; color: var(--muted); line-height: 1.6; }
@@ -85,8 +87,9 @@
   <img id="result-image" alt="">
   <p id="result-answer" class="answer"></p>
   <p id="result-kana" class="muted"></p>
+  <p class="map"><a id="result-map" target="_blank" rel="noopener">Google マップで見る ↗</a></p>
   <div class="actions">
-    <button id="next" type="button">もう一問</button>
+    <button id="next" type="button" autofocus>もう一問</button>
     <button id="close" type="button" class="secondary">閉じる</button>
   </div>
 </dialog>
@@ -305,6 +308,8 @@
     $("result-image").alt = `${answer.pref}${answer.name}の形`;
     $("result-answer").textContent = `${answer.pref} ${answer.name}`;
     $("result-kana").textContent = answer.kana;
+    // 市区町村名で検索すると、Google マップが境界を赤い点線で囲んだ状態で開く
+    $("result-map").href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(answer.pref + answer.name)}`;
     if (!$("result").open) $("result").showModal();
   }
 
