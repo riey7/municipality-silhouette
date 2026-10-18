@@ -18,8 +18,8 @@ npm run serve        # http://localhost:8000/check.html で形を確認
 2. `build-data.mjs`：出題用の形（中間ファイル `raw/build/shapes/`、commitしない）と一覧を作る
    - 面積0.01km²未満の小島を除く（唯一の陸地なら残す）
    - 表示枠：最大の陸地と、そこから50km以内かつ面積が1%以上の島
-   - 間引き：表示枠の対角線の1/7200より小さい凹凸を消す（大きさに比例）。`DETAIL=2400 npm run build:data` のように実行時に変えられる
-3. `render-images.mjs`：形を表示枠に合わせて投影し、画像 `data/images/<code>.svg` にする。間引きは画像上で0.3px（1000px四方）
+   - 間引き：表示枠の対角線の1/15000より小さい凹凸を消す（大きさに比例。画像側より細かくしておく）
+3. `render-images.mjs`：形を表示枠に合わせて投影し、画像 `data/images/<code>.svg` にする。間引きは画像上で0.1px（1000px四方）。細かさはこれで決まり、`TOL=0.05 npm run build:data` のように実行時に変えられる
 4. `build-japan.sh`：答え合わせ用の全国地図（境界線を共有したまま800m単位で間引く）
 
 基準値は `build-data.mjs` と `render-images.mjs` の冒頭にまとめてある。

@@ -6,14 +6,17 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync }
 import { geoMercator } from "d3-geo";
 import simplify from "simplify-js";
 
+const fail = (msg) => { console.error(`NG: ${msg}`); process.exit(1); };
+
 // ── 基準値 ──
 const SIZE = 1000;          // viewBox の一辺
 const PAD = 25;             // 表示枠の外側の余白
-const TOL_PX = 0.3;         // これより小さい凹凸を消す（viewBox 上のpx。全画面表示でも1px未満）
+// これより小さい凹凸を消す（viewBox 上のpx）。小さいほど細かい。TOL=0.05 npm run build:data のように試せる
+const TOL_PX = Number(process.env.TOL ?? 0.1);
+if (!(TOL_PX > 0)) fail(`TOL が正の数でない: ${process.env.TOL}`);
 const MAX_FILE_KB = 300;
 const COLORS = { light: "#2f5d4a", dark: "#7fb89d" }; // check.html の --shape と同じ
 
-const fail = (msg) => { console.error(`NG: ${msg}`); process.exit(1); };
 const r1 = (v) => Math.round(v * 10) / 10;
 const outside = (pts) =>
   pts.every((p) => p.x < 0) || pts.every((p) => p.x > SIZE) ||
@@ -62,4 +65,5 @@ if (heavy.length) fail(`画像が重すぎる: ${heavy.map((x) => `${x.label}(${
 const total = stats.reduce((a, x) => a + x.kb, 0);
 const p = stats.map((x) => x.points).sort((a, b) => a - b);
 console.log(`OK: 画像 ${stats.length}件 / 合計 ${(total / 1024).toFixed(1)}MB（最大 ${Math.max(...stats.map((x) => x.kb)).toFixed(0)}KB）`);
+console.log(`細かさ: 画像上 ${TOL_PX}px（1000px四方）`);
 console.log(`画像の頂点数: 最小 ${p[0]} / 中央値 ${p[p.length >> 1]} / 最大 ${p.at(-1)}`);
