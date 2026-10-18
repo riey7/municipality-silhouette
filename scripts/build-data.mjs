@@ -8,7 +8,9 @@ import simplify from "simplify-js";
 import XLSX from "xlsx";
 
 // ── 仮の基準値（確認ページで見比べて調整する）──
-const DETAIL_DIVISOR = 800;     // 間引きの許容誤差 = 表示枠の対角線 / これ
+// 間引きの許容誤差 = 表示枠の対角線 / これ（DETAIL=4000 npm run build:data のように試せる）
+const DETAIL_DIVISOR = Number(process.env.DETAIL ?? 2400);
+if (!(DETAIL_DIVISOR > 0)) { console.error(`NG: DETAIL が正の数でない: ${process.env.DETAIL}`); process.exit(1); }
 const MIN_ISLET_M2 = 10_000;    // これ未満の小島は除く（唯一の陸地なら残す）
 const VIEW_MAX_KM = 50;         // 表示枠に入れる島：最大の陸地から何km以内か
 const VIEW_MIN_RATIO = 0.01;    // 表示枠に入れる島：最大の陸地の何割以上の面積か
@@ -29,7 +31,7 @@ const DESIGNATED_CITIES = new Map(Object.entries({
   "福岡県|福岡市": "40130", "熊本県|熊本市": "43100",
 }));
 const MIN_VERTICES = 12;
-const MAX_FILE_KB = 150;
+const MAX_FILE_KB = 1000;
 
 const R_KM = 6371.0088;
 const fail = (msg) => { console.error(`NG: ${msg}`); process.exit(1); };
@@ -166,5 +168,6 @@ writeFileSync("raw/build/report.json", JSON.stringify(report));
 const total = report.reduce((a, r) => a + r.kb, 0);
 const v = report.map((r) => r.vertices).sort((a, b) => a - b);
 console.log(`OK: ${index.length}件 / shapes 合計 ${(total / 1024).toFixed(1)}MB（最大 ${Math.max(...report.map((r) => r.kb)).toFixed(0)}KB）`);
+console.log(`細かさ: 対角線の1/${DETAIL_DIVISOR}`);
 console.log(`頂点数: 最小 ${v[0]} / 中央値 ${v[v.length >> 1]} / 最大 ${v.at(-1)}`);
 console.log(`表示枠の外に島がある: ${report.filter((r) => r.outOfView).length}件 / 小島を除いた: ${report.filter((r) => r.droppedIslets > 0).length}件`);
