@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>市区町村シルエット</title>
+<style>
+  :root { --paper: #f7f8f6; --card: #ffffff; --ink: #1d2a24; --muted: #5d6b64; --shape: #2f5d4a; --line: #d5dbd7; --miss: #c2562f; --hit: #2f7d55; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #141a17; --card: #1b2320; --ink: #e6ece8; --muted: #9aa8a1; --shape: #7fb89d; --line: #2c3631; --miss: #e98a62; --hit: #6fcf97; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px 16px 32px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  h1 { font-size: 1.2rem; margin: 0; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .silhouette { display: block; width: 100%; aspect-ratio: 1; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  form { display: flex; gap: 8px; margin-top: 14px; }
+  input { flex: 1; min-width: 0; font: inherit; font-size: 1.05rem; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+  button { font: inherit; padding: 10px 16px; border: 1px solid var(--shape); border-radius: 8px; background: var(--shape); color: var(--paper); cursor: pointer; white-space: nowrap; }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+  button:disabled, input:disabled { opacity: .5; cursor: default; }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--shape); outline-offset: 2px; }
+  #message { min-height: 1.4em; margin: 8px 0 0; font-size: .9rem; color: var(--miss); }
+  ol { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+  li { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  li .no { color: var(--muted); font-size: .8rem; width: 1.5em; }
+  li.miss .mark { color: var(--miss); font-weight: bold; }
+  li.hit { border-color: var(--hit); }
+  li.hit .mark { color: var(--hit); font-weight: bold; }
+  li .mark { margin-left: auto; }
+  dialog { border: none; border-radius: 14px; padding: 24px; width: min(360px, calc(100vw - 32px)); background: var(--card); color: var(--ink); text-align: center; box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 { margin: 0 0 6px; font-size: 1.5rem; }
+  dialog h2.hit { color: var(--hit); }
+  dialog h2.miss { color: var(--miss); }
+  dialog .answer { font-size: 1.15rem; margin: 10px 0 2px; }
+  dialog img { display: block; width: 160px; height: 160px; margin: 12px auto; }
+  dialog .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+  .again { text-align: center; margin: 14px 0 0; }
+  footer { margin-top: 28px; font-size: .75rem; color: var(--muted); line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>市区町村シルエット</h1>
+    <span id="mode" class="muted"></span>
+  </header>
+
+  <img id="silhouette" class="silhouette" alt="出題中の市区町村のシルエット">
+
+  <form id="form" autocomplete="off">
+    <input id="guess" type="text" placeholder="市区町村名（例：横浜市、よこはま）" aria-label="市区町村名" enterkeyhint="send" disabled>
+    <button id="submit" type="submit" disabled>回答</button>
+  </form>
+  <p id="message" role="status"></p>
+
+  <ol id="guesses" aria-label="回答の履歴"></ol>
+  <p class="again"><button id="again" type="button" class="secondary" hidden>もう一問</button></p>
+
+  <footer>
+    出典：国土数値情報（行政区域データ）（国土交通省）を加工して作成／読み：総務省「全国地方公共団体コード」を加工して作成
+  </footer>
+</main>
+
+<dialog id="result">
+  <h2 id="result-title"></h2>
+  <p id="result-sub" class="muted"></p>
+  <img id="result-image" alt="">
+  <p id="result-answer" class="answer"></p>
+  <p id="result-kana" class="muted"></p>
+  <div class="actions">
+    <button id="next" type="button">もう一問</button>
+    <button id="close" type="button" class="secondary">閉じる</button>
+  </div>
+</dialog>
+
+<script type="module">
+  const MAX_GUESSES = 6;
+  // 北方領土の6村は答えにしない（回答としては受け付ける）
+  const NOT_ANSWERS = new Set(["01695", "01696", "01697", "01698", "01699", "01700"]);
+  const $ = (id) => document.getElementById(id);
+
+  // ── 入力の照合 ──
+  // 漢字・ひらがな・カタカナ、「市」「町」などの有無、都道府県名の前置きを許す
+  const toHiragana = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  const normalize = (s) => toHiragana(s.normalize("NFKC").replace(/[\s・]/g, ""));
+  const stripNameSuffix = (s) => s.replace(/(市|町|村|区)$/, "");
+  const stripKanaSuffix = (s) => s.replace(/(し|ちょう|まち|むら|そん|く)$/, "");
+
+  const index = await fetch("data/index.json").then((r) => r.json());
+  const prefs = [...new Set(index.map((m) => m.pref))].sort((a, b) => b.length - a.length);
+  const lookup = new Map(); // 正規化した表記 → 市区町村の配列
+  const add = (key, m) => {
+    if (!key) return;
+    const list = lookup.get(key) ?? [];
+    if (!list.includes(m)) list.push(m);
+    lookup.set(key, list);
+  };
+  for (const m of index) {
+    const name = normalize(m.name), kana = normalize(m.kana);
+    for (const key of [name, stripNameSuffix(name), kana, stripKanaSuffix(kana)]) {
+      add(key, m);
+      add(normalize(m.pref) + key, m);
+    }
+  }
+  function find(input) {
+    const key = normalize(input);
+    if (!key) return [];
+    if (lookup.has(key)) return lookup.get(key);
+    // 「神奈川県横浜市」のように都道府県名が付いていたら外して探す
+    const pref = prefs.find((p) => key.startsWith(normalize(p)));
+    return pref ? (lookup.get(key.slice(normalize(pref).length)) ?? []) : [];
+  }
+
+  // ── 出題 ──
+  const pool = index.filter((m) => !NOT_ANSWERS.has(m.code));
+  const todayJst = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const hash = (s) => [...s].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261);
+
+  const store = {
+    load(key) { try { return JSON.parse(localStorage.getItem(key)) ?? []; } catch { return []; } },
+    save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 保存できなくても遊べる */ } },
+  };
+
+  let answer, guesses, storageKey;
+
+  function start(mode) {
+    if (mode === "daily") {
+      const date = todayJst();
+      answer = pool[hash(date) % pool.length];
+      storageKey = `daily:${date}`;
+      $("mode").textContent = `今日の問題（${date}）`;
+    } else {
+      answer = pool[Math.floor(Math.random() * pool.length)];
+      storageKey = null;
+      $("mode").textContent = "練習問題";
+    }
+    guesses = storageKey ? store.load(storageKey).filter((code) => index.some((m) => m.code === code)) : [];
+    $("silhouette").src = `data/images/${answer.code}.svg`;
+    $("message").textContent = "";
+    render();
+    if (isOver()) showResult();
+    else $("guess").focus();
+  }
+
+  const byCode = new Map(index.map((m) => [m.code, m]));
+  const solved = () => guesses.includes(answer.code);
+  const isOver = () => solved() || guesses.length >= MAX_GUESSES;
+
+  function render() {
+    const rows = [];
+    for (let i = 0; i < MAX_GUESSES; i++) {
+      const li = document.createElement("li");
+      const code = guesses[i];
+      if (code) {
+        const m = byCode.get(code), hit = code === answer.code;
+        li.className = hit ? "hit" : "miss";
+        li.innerHTML = `<span class="no">${i + 1}</span><span></span><span class="mark">${hit ? "○ 正解" : "×"}</span>`;
+        li.children[1].textContent = `${m.pref} ${m.name}`;
+      } else {
+        li.innerHTML = `<span class="no">${i + 1}</span>`;
+      }
+      rows.push(li);
+    }
+    $("guesses").replaceChildren(...rows);
+    const over = isOver();
+    $("guess").disabled = over;
+    $("submit").disabled = over;
+    $("again").hidden = !over;
+    $("guess").placeholder = over ? "終了しました" : `市区町村名（残り${MAX_GUESSES - guesses.length}回）`;
+  }
+
+  function submit() {
+    if (isOver()) return;
+    const input = $("guess").value;
+    const matches = find(input);
+    if (!input.trim()) return;
+    if (!matches.length) {
+      $("message").textContent = `「${input.trim()}」という市区町村は見つかりません（回数は減りません）`;
+      return;
+    }
+    // 同じ名前が複数あるとき（府中市など）は、どれかが正解なら正解
+    const pick = matches.find((m) => m.code === answer.code) ?? matches[0];
+    if (guesses.includes(pick.code)) {
+      $("message").textContent = `${pick.pref} ${pick.name} はもう回答しました`;
+      return;
+    }
+    guesses.push(pick.code);
+    if (storageKey) store.save(storageKey, guesses);
+    $("guess").value = "";
+    $("message").textContent = matches.length > 1 && pick.code !== answer.code
+      ? `同じ名前が${matches.length}件あります（${matches.map((m) => m.pref).join("・")}）。どれも不正解です`
+      : "";
+    render();
+    if (isOver()) showResult();
+  }
+
+  function showResult() {
+    const hit = solved();
+    $("result-title").textContent = hit ? "正解！" : "残念…";
+    $("result-title").className = hit ? "hit" : "miss";
+    $("result-sub").textContent = hit ? `${guesses.indexOf(answer.code) + 1}回目で正解しました` : "正解は";
+    $("result-image").src = `data/images/${answer.code}.svg`;
+    $("result-image").alt = `${answer.pref}${answer.name}の形`;
+    $("result-answer").textContent = `${answer.pref} ${answer.name}`;
+    $("result-kana").textContent = answer.kana;
+    if (!$("result").open) $("result").showModal();
+  }
+
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+  // 日本語入力の変換確定の Enter では送信しない
+  $("guess").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.isComposing || e.keyCode === 229)) e.preventDefault(); });
+  $("close").addEventListener("click", () => $("result").close());
+  $("next").addEventListener("click", () => { $("result").close(); start("practice"); });
+  $("again").addEventListener("click", () => start("practice"));
+
+  start("daily");
+</script>
+</body>
+</html>
